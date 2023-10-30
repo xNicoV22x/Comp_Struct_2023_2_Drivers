@@ -26,4 +26,14 @@ typedef struct {
 //Crear y declarar la funcion de inicialización
 void ring_buffer_init(ring_buffer_t *ring_buffer, uint8_t *buffer, uint16_t capacity);
 
+//Crear función para poner datos en el buffer con la estructura de control
+uint8_t ring_buffer_put(ring_buffer_t *ring_buffer, uint8_t data);
+
+//Crear e implementar el prototipo de la función de leer
+uint8_t ring_buffer_get(ring_buffer_t *ring_buffer, uint8_t *data);
+
+uint16_t ring_buffer_size(ring_buffer_t *ring_buffer);
+
+uint8_t ring_buffer_is_empty(ring_buffer_t *ring_buffer);
+
 #endif /* INC_RING_BUFFER_H_ */

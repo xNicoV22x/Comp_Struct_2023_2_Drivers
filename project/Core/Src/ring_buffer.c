@@ -2,8 +2,9 @@
 
 #include "ring_buffer.h"
 
-
-//Definición de la función
+/**
+ * @brief this function initialize the buffer
+ */
 void ring_buffer_init(ring_buffer_t *ring_buffer, uint8_t *buffer, uint16_t capacity)
 {
 	ring_buffer->buffer = buffer;      /*Apuntador*/
@@ -13,6 +14,11 @@ void ring_buffer_init(ring_buffer_t *ring_buffer, uint8_t *buffer, uint16_t capa
 	ring_buffer->tail = 0;			   /**/
 	ring_buffer->is_full = 0;		   /**/
 }
+
+/**
+ * @brief this function put data in buffer
+ * This function include to error return
+ */
 
 uint8_t ring_buffer_put(ring_buffer_t *ring_buffer, uint8_t data)
 {
@@ -34,6 +40,9 @@ uint8_t ring_buffer_put(ring_buffer_t *ring_buffer, uint8_t data)
 	return 1;
 }
 
+/**
+ * @brief this function get data by the buffer
+ */
 uint8_t ring_buffer_get(ring_buffer_t *ring_buffer, uint8_t *data)
 {
 	if (ring_buffer_is_empty(ring_buffer) == 0)   //((ring_buffer->is_full != 0) || (ring_buffer->tail != ring_buffer->head))
@@ -46,6 +55,9 @@ uint8_t ring_buffer_get(ring_buffer_t *ring_buffer, uint8_t *data)
 	return 0;
 }
 
+/**
+ * @brief this function check the size of buffer.
+ */
 uint16_t ring_buffer_size(ring_buffer_t *ring_buffer)
 {
 	uint16_t size = 0;

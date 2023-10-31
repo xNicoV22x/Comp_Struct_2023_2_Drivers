@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include "ring_buffer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,7 +44,10 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint8_t rx_buffer[16];
+ring_buffer_t ring_buffer_uart_rx;
 
+uint8_t rx_data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -56,7 +60,19 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+int _write(int file, char *ptr, int len)
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *) ptr, len, HAL_MAX_DELAY);
+  return len;
+}
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	//rx_data = 50;
+	ring_buffer_put(&ring_buffer_uart_rx, rx_data);
+
+	HAL_UART_Receive_IT(&huart2, &rx_data, 1); //Recibir otro byte
+}
 /* USER CODE END 0 */
 
 /**
@@ -88,6 +104,10 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+
+  ring_buffer_init(&ring_buffer_uart_rx, rx_buffer, 16);
+
+  HAL_UART_Receive_IT(&huart2, &rx_data, 1);               //Recibir de un byte
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -96,6 +116,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  uint16_t size = ring_buffer_size(&ring_buffer_uart_rx);  //Revisar tamaño del buffer
+
+	  if(size != 0) //Solo si hay bytes en el buffer se ejecuta
+	  {
+		  uint8_t /*(rx_array)*/rx_array[size + 1];  //Arreglo auxiliar para los datos
+		  for (uint16_t idx = 0; idx < size; idx++) //Leer cada dato del ring_buffer en cada uno de los datos del arreglo auxiliar
+		  {
+			  ring_buffer_get(&ring_buffer_uart_rx, &rx_array[idx]);
+		  }
+		  rx_array[size] = 0;
+		  printf("Rec: %s\r\n", rx_array);
+	  }
+	  HAL_Delay(1000); //To wait one second
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

@@ -48,6 +48,8 @@ uint8_t rx_buffer[16];
 ring_buffer_t ring_buffer_uart_rx;
 
 uint8_t rx_data;
+
+uint16_t key_event = 0xFF;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,13 +83,60 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	uint16_t column_1 = (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin);
-	uint16_t column_2 = (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin);
-	uint16_t column_3 = (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin);
-	uint16_t column_4 = (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin);
-	printf("Keys: %x, %x, %x, %x\r\n",
-			  column_1, column_2, column_3, column_4);
+	key_event = GPIO_Pin;
 }
+
+uint8_t keypad_handler(void)
+{
+	static uint32_t last_pressed_tick = 0;
+	uint8_t key_pressed = 0xFF;
+
+	if((key_event == 0xFF) || (last_pressed_tick + 100) >= HAL_GetTick())
+	{
+		return key_pressed;
+	}
+	last_pressed_tick = HAL_GetTick();
+
+//	uint16_t column_1 = (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin);
+//	uint16_t column_2 = (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin);
+//	uint16_t column_3 = (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin);
+//	uint16_t column_4 = (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin);
+//	printf("Keys: %x, %x, %x, %x\r\n",
+//			  column_1, column_2, column_3, column_4);
+
+	switch(key_event)
+	{
+	case COLUMN_1_Pin:
+		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Turn on row 1
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BRR = ROW_4_Pin;	//Turn off row 4
+		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x01;
+
+			ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
+			ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
+			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x04;
+
+			ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+			ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
+			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x07;
+
+			ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+			ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
+			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x0E;
+		default:
+			break;
+		}
+		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Again Turn on row 1
+		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Again Turn on row 2
+		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Again Turn on row 3
+		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Again Turn on row 4
+
+		printf("Key Pressed: %x\r\n", key_pressed);
+		key_event = 0xFF;
+		return key_pressed;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -142,7 +191,7 @@ int main(void)
 		  rx_array[size] = 0;
 		  printf("Rec: %s\r\n", rx_array);
 	  }
-	  HAL_Delay(1000); //To wait one second
+	  keypad_handler();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

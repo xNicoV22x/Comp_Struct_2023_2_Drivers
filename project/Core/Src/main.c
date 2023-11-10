@@ -23,9 +23,12 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include "ring_buffer.h"
-
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include "string.h"
+
+//#include "ssd1306.h"
+//#include "ssd1306_fonts.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,12 +52,13 @@ I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-//uint8_t rx_buffer[16];
-//ring_buffer_t ring_buffer_uart_rx;
-
-//uint8_t rx_data;
-
-uint16_t key_event = 0xFF;
+uint8_t rx_buffer[16];                             //A vector is defined to store the keyboard data
+ring_buffer_t ring_buffer;						   //A variable is defined with the buffer ring structure to receive the data
+uint8_t rx_data;								   //The variable is defined to receive the data
+uint16_t key_event = 0xFF;						   //Defined to check if a keyboard interruption occurred
+uint8_t birthyear[] = {0x01,0x09,0x09,0x09,0x0F};  //Variable defined to store the hexagesimal value of the year of birth
+uint8_t Count;									   //To define variable as counter
+uint8_t key_pressed;							   //To define variable to save the value of key pressed of keypad
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,33 +78,58 @@ int _write(int file, char *ptr, int len)
   return len;
 }
 
-/*void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+/**
+  * @brief  UART Interrupt line detection callback.
+  * @param  huart to save the interruption event.
+  * @retval None
+  */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	//rx_data = 50;
-	ring_buffer_put(&ring_buffer_uart_rx, rx_data);
-
-	HAL_UART_Receive_IT(&huart2, &rx_data, 1); //Recibir otro byte
+	ring_buffer_put(&ring_buffer, key_pressed);
+	HAL_UART_Receive_IT(&huart2, &key_pressed, 1); //Recibir otro byte
 }
-*/
+
 
 /**
   * @brief  EXTI line detection callback.
   * @param  GPIO_Pin Specifies the port pin connected to corresponding EXTI line.
   * @retval None
   */
-/*void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	key_event = GPIO_Pin;
 }
 
-uint8_t keypad_handler(void)
-{
-	static uint32_t last_pressed_tick = 0;
-	uint8_t key_pressed = 0xFF;
+int memcmp(const void *str1, const void *str2, size_t n);
 
-	if((key_event == 0xFF) || (last_pressed_tick + 100) >= HAL_GetTick())
-	{
-		return key_pressed;
+/**
+ * @brief This functions initialize the functionality of the keypad
+ */
+void keypad_init(void)
+{
+	/* Set the rows high to be detected in the columns by rising interrupt */
+	ROW_1_GPIO_Port->BSRR = ROW_1_Pin;
+	ROW_2_GPIO_Port->BSRR = ROW_2_Pin;
+	ROW_3_GPIO_Port->BSRR = ROW_3_Pin;
+	ROW_4_GPIO_Port->BSRR = ROW_4_Pin;
+}
+
+/**
+ * @brief  This function debounces and identify keypad events.
+ * @param  column_to_evaluate: the column where the event happened.
+ * @retval 0xFF -> invalid key. [0x00 - 0x0F] -> valid key.
+ */
+uint8_t keypad_handler(uint16_t column_to_evaluate)
+{
+	uint8_t key_pressed = 0xFF; // Value to return
+
+	/*** Debounce the key press (remove noise in the key) ***/
+#define KEY_DEBOUNCE_MS 300 /*!> Minimum time required for since last press */
+	static uint32_t last_pressed_tick = 0;
+	if (HAL_GetTick() <= (last_pressed_tick + KEY_DEBOUNCE_MS)) {
+		// less than KEY_DEBOUNCE_MS since last press. Probably noise
+		return key_pressed; // return 0xFF
 	}
 	last_pressed_tick = HAL_GetTick();
 
@@ -111,39 +140,189 @@ uint8_t keypad_handler(void)
 //	printf("Keys: %x, %x, %x, %x\r\n",
 //			  column_1, column_2, column_3, column_4);
 
-	switch(key_event)
+	switch(column_to_evaluate)
 	{
 	case COLUMN_1_Pin:
 		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Turn on row 1
 		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
 		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
 		ROW_4_GPIO_Port->BRR = ROW_4_Pin;	//Turn off row 4
-		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x01;
-
-			ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
-			ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
-			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x04;
-
-			ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
-			ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
-			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x07;
-
-			ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
-			ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
-			if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin) key_pressed = 0x0E;
-		default:
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin)
+		{
+			//If column 1 is detected and row 1 is high, this value is returned
+			key_pressed = 0x01;
 			break;
 		}
-		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Again Turn on row 1
-		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Again Turn on row 2
-		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Again Turn on row 3
-		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Again Turn on row 4
 
-		printf("Key Pressed: %x\r\n", key_pressed);
-		key_event = 0xFF;
-		return key_pressed;
+		ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
+		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin)
+		{
+			//If column 1 is detected and row 2 is high, this value is returned
+			key_pressed = 0x04;
+			break;
+		}
+
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin)
+		{
+			//If column 1 is detected and row 3 is high, this value is returned
+			key_pressed = 0x07;
+			break;
+		}
+
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_1_GPIO_Port->IDR & COLUMN_1_Pin)
+		{
+			//If column 1 is detected and row 4 is high, this value is returned
+			key_pressed = 0x0E;
+			break;
+		}
+
+	case COLUMN_2_Pin:
+		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Turn on row 1
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BRR = ROW_4_Pin;	//Turn off row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin)
+		{
+			//If column 2 is detected and row 1 is high, this value is returned
+			key_pressed = 0x02;
+			break;
+		}
+
+		ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
+		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin)
+		{
+			//If column 2 is detected and row 2 is high, this value is returned
+			key_pressed = 0x05;
+			break;
+		}
+
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin)
+		{
+			//If column 2 is detected and row 3 is high, this value is returned
+			key_pressed = 0x08;
+			break;
+		}
+
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_2_GPIO_Port->IDR & COLUMN_2_Pin)
+		{
+			//If column 2 is detected and row 4 is high, this value is returned
+			key_pressed = 0x00;
+			break;
+		}
+
+	case COLUMN_3_Pin:
+		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Turn on row 1
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BRR = ROW_4_Pin;	//Turn off row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin)
+		{
+			//If column 3 is detected and row 1 is high, this value is returned
+			key_pressed = 0x03;
+			break;
+		}
+
+		ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
+		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin)
+		{
+			//If column 3 is detected and row 2 is high, this value is returned
+			key_pressed = 0x06;
+			break;
+		}
+
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin)
+		{
+			//If column 3 is detected and row 3 is high, this value is returned
+			key_pressed = 0x09;
+			break;
+		}
+
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_3_GPIO_Port->IDR & COLUMN_3_Pin)
+		{
+			//If column 3 is detected and row 4 is high, this value is returned
+			key_pressed = 0x0F;
+			break;
+		}
+
+	case COLUMN_4_Pin:
+		ROW_1_GPIO_Port->BSRR = ROW_1_Pin;	//Turn on row 1
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BRR = ROW_4_Pin;	//Turn off row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin)
+		{
+			//If column 4 is detected and row 1 is high, this value is returned
+			key_pressed = 0x0A;
+			break;
+		}
+
+		ROW_1_GPIO_Port->BRR = ROW_1_Pin;	//Turn off row 1
+		ROW_2_GPIO_Port->BSRR = ROW_2_Pin;	//Turn on row 2
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin)
+		{
+			//If column 4 is detected and row 2 is high, this value is returned
+			key_pressed = 0x0B;
+			break;
+		}
+
+		ROW_2_GPIO_Port->BRR = ROW_2_Pin;	//Turn off row 2
+		ROW_3_GPIO_Port->BSRR = ROW_3_Pin;	//Turn on row 3
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin)
+		{
+			//If column 4 is detected and row 4 is high, this value is returned
+			key_pressed = 0x0C;
+			break;
+		}
+
+		ROW_3_GPIO_Port->BRR = ROW_3_Pin;	//Turn off row 3
+		ROW_4_GPIO_Port->BSRR = ROW_4_Pin;	//Turn on row 4
+		HAL_Delay(2);						//Wait 2 ms so that it does not detect voltage spikes
+		if (COLUMN_4_GPIO_Port->IDR & COLUMN_4_Pin)
+		{
+			//If column 4 is detected and row 4 is high, this value is returned
+			key_pressed = 0x0D;
+			break;
+		}
+
+	default:
+		//If another value is detected, the default notice is printed
+		printf("Unknown column: %x\r\n", column_to_evaluate);  // invalid: 0xFF, valid:[0x00-0x0F]
+		break;
+	}
+	keypad_init(); // set the columns high again
+	return key_pressed; //Return the value when using the fucntion
 }
-*/
+
 /* USER CODE END 0 */
 
 /**
@@ -178,42 +357,86 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  ssd1306_Init();
-  ssd1306_Fill(White);
-  ssd1306_SetCursor(20, 20);
-  ssd1306_WriteString("Hello World!", Font_11x18, Black);
-  ssd1306_UpdateScreen();
+  keypad_init();
+  ring_buffer_init (&ring_buffer, rx_buffer, 5);
+  HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+
+//  ssd1306_Init();
+//  ssd1306_Fill(White);
+//  ssd1306_SetCursor(20, 20);
+//  ssd1306_WriteString("Hello World!", Font_11x18, Black);
+//  ssd1306_UpdateScreen();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  /*ROW_1_GPIO_Port->BSRR = ROW_1_Pin;
-  ROW_2_GPIO_Port->BSRR = ROW_2_Pin;
-  ROW_3_GPIO_Port->BSRR = ROW_3_Pin;
-  ROW_4_GPIO_Port->BSRR = ROW_4_Pin;
-  */
 
   while (1)
   {
-	 /* uint16_t size = ring_buffer_size(&ring_buffer_uart_rx);  //Revisar tamaño del buffer
-	  if(size != 0) //Solo si hay bytes en el buffer se ejecuta
+	  if (key_event != 0xFF)
 	  {
-		  uint8_t rx_array[size + 1];  //Arreglo auxiliar para los datos
-		  for (uint16_t idx = 0; idx < size; idx++) //Leer cada dato del ring_buffer en cada uno de los datos del arreglo auxiliar
+		  uint8_t key_pressed = keypad_handler(key_event); // call the keypad handler
+		  if (key_pressed != 0xFF)
 		  {
-			  ring_buffer_get(&ring_buffer_uart_rx, &rx_array[idx]);
+			 printf("key pressed: %x\r\n", key_pressed);
+			 ring_buffer_put(&ring_buffer, key_pressed);
 		  }
-		  rx_array[size] = 0;
-		  printf("Rec: %s\r\n", rx_array);
+		  key_event = 0xFF; // clean the event
+		  Count++;
+
+		  if (Count == 6)
+		  {
+			  printf("La secuencia guardada es %x, %x, %x, %x, %x \r\n",
+					  rx_buffer[0], rx_buffer[1], rx_buffer[2], rx_buffer[3], rx_buffer[4]);
+		      Count = 0; // Restart the counter
+		  }
+
+		  if (key_pressed == 0x0E)
+		  {
+		                // Reset the UART RX buffer, clear buffer to restart sequence, and update OLED screen
+		      ring_buffer_reset(&ring_buffer);
+		      memset(rx_buffer, '\0', sizeof(rx_buffer));
+		      ssd1306_Fill(Black);
+		      ssd1306_SetCursor(20, 20);
+		      ssd1306_WriteString("WAIT", Font_16x26, White);
+		      ssd1306_UpdateScreen();
+	      }
+
+		  if ((memcmp(rx_buffer, birthyear, 5) == 0) && (ring_buffer_is_full(&ring_buffer) == 1))
+		  {
+		                // Display 'PASS' message on the OLED screen if the password is correct
+			  ssd1306_Fill(White);
+		      ssd1306_SetCursor(20, 20);
+		      ssd1306_WriteString("PASS", Font_16x26, Black);
+	          ssd1306_UpdateScreen();
+		  }
+
+		  if ((memcmp(rx_buffer, birthyear, 5) != 0) && (ring_buffer_is_full(&ring_buffer) == 1))
+		  {
+		                // Display 'FAIL' message on the OLED screen if the password is incorrect
+              ssd1306_Fill(Black);
+              ssd1306_SetCursor(20, 20);
+              ssd1306_WriteString("FAIL", Font_16x26, White);
+              ssd1306_UpdateScreen();
+	      }
 	  }
-	  keypad_handler();*/
+//	  if(size != 0) //Solo si hay bytes en el buffer se ejecuta
+//	  {
+//		  uint8_t rx_array[size + 1];  //Arreglo auxiliar para los datos
+//		  for (uint16_t idx = 0; idx < size; idx++) //Leer cada dato del ring_buffer en cada uno de los datos del arreglo auxiliar
+//		  {
+//			  ring_buffer_get(&ring_buffer_uart_rx, &rx_array[idx]);
+//		  }
+//		  rx_array[size] = 0;
+//		  printf("Rec: %s\r\n", rx_array);
+//	  }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-}
+ }
 
 /**
   * @brief System Clock Configuration
@@ -273,11 +496,11 @@ static void MX_I2C1_Init(void)
 {
 
   /* USER CODE BEGIN I2C1_Init 0 */
-
+//
   /* USER CODE END I2C1_Init 0 */
 
   /* USER CODE BEGIN I2C1_Init 1 */
-
+//
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
   hi2c1.Init.Timing = 0x10909CEC;
@@ -307,7 +530,7 @@ static void MX_I2C1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C1_Init 2 */
-
+//
   /* USER CODE END I2C1_Init 2 */
 
 }
